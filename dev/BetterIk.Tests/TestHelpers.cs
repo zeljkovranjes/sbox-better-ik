@@ -52,6 +52,14 @@ internal static class TestHelpers
     public static Vector3 ProjectPerpendicular(Vector3 v, Vector3 axis)
         => v - Vector3.Dot(v, axis) * axis;
 
+    public static float AngleBetweenDegrees(Vector3 a, Vector3 b)
+    {
+        Vector3 na = Vector3.Normalize(a);
+        Vector3 nb = Vector3.Normalize(b);
+        float dot = Math.Clamp(Vector3.Dot(na, nb), -1f, 1f);
+        return MathF.Acos(dot) * (180f / MathF.PI);
+    }
+
     public static void AssertFinite(TwoBoneIkResult r)
     {
         AssertFiniteVector(r.MidPosition, nameof(r.MidPosition));
