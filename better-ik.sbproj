@@ -1,0 +1,18 @@
+{
+  "Title": "Better IK",
+  "Type": "library",
+  "Org": "notpointless",
+  "Ident": "better_ik",
+  "Schema": 1,
+  "IncludeSourceFiles": false,
+  "Resources": null,
+  "PackageReferences": [],
+  "EditorReferences": null,
+  "Mounts": null,
+  "IsStandaloneOnly": false,
+  "Metadata": {
+    "Summary": "Runtime two-bone IK with first-class pole vector control that works on any rigged model, zero setup.",
+    "Description": "Better IK gives any skinned model working, stable two-bone IK (arms, legs) with a proper pole vector, computed analytically every frame. Drop the component on the end bone (hand/foot); it walks up the skeleton to find the chain automatically, works on Citizen or any custom rig, and layers on top of the animgraph instead of fighting it.\n\nSource & issues: https://github.com/zeljkovranjes/sbox-better-ik",
+    "WebsiteUrl": "https://github.com/zeljkovranjes/sbox-better-ik"
+  }
+}
