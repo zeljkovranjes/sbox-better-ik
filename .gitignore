@@ -5,3 +5,4 @@ dev/
 *.user
 .sbox/
 DECISIONS.md
+launchSettings.json
