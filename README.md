@@ -7,8 +7,6 @@ Runtime IK for s&box. Drop a component on the end bone of any rigged model (hand
 - **FootPlacementIK** - ground conformance (foot planting + pelvis drop) on top of TwoBoneIK.
 - **FabrikIK** - unconstrained variable-length chain IK (tails, tentacles, ropes).
 
-Verified on 3 structurally distinct rigs: the stock Citizen (bind-pose-authored, Source-convention bone roll), a custom adversarial humanoid (Blender-native bone orientation, 40-degree bone roll, unequal limb proportions, ~0.65x scale), and a non-humanoid creature (no limbs, a multi-bone neck and tail). Also verified against a real animated locomotion system (Citizen's stock animgraph walk cycle) and against real root-motion translation across a multi-step staircase (`FootPlacementIK` correctly conforming both feet and the pelvis as the character actually moves through changing ground height), not just static bind poses.
-
 ## Usage
 
 ### TwoBoneIK
@@ -34,11 +32,3 @@ Gizmo: green/red trace lines per foot (hit/miss), a magenta arrow showing the cu
 For chains TwoBoneIK can't handle - tails, tentacles, ropes, any number of bones. Unlike TwoBoneIK, it can't guess its own depth, so both **Root Bone** and **End Bone** must be set explicitly (walking up from End Bone until Root Bone is found by name). Drag a **Target**; **Weight** blends in/out; **Max Iterations**/**Tolerance** control the solve (Tolerance defaults to 0, meaning "auto" - proportional to the chain's own length). No pole vector or joint limits in this version - it's for floppy chains, not hinge-like limbs.
 
 Gizmo: a yellow polyline along the chain plus a target marker; red text if the chain couldn't be resolved.
-
-### Common notes
-
-- Every component reads a fresh animated pose each frame and never assumes an axis convention, so it works on rigs with arbitrary bone roll, non-uniform proportions, or unusual naming - nothing needs to be renamed or reoriented to match this library.
-- `Weight = 0` is an exact, fully-inert passthrough: the component reads and writes nothing that frame, so it's safe to leave attached and toggle at runtime.
-- All bone-name properties are plain strings (no dropdown picker exists yet); an invalid name is always surfaced via the component's gizmo rather than failing silently.
-
-Status: in development. See DECISIONS.md for design decisions and reasoning.
