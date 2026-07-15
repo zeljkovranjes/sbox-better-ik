@@ -1,0 +1,8 @@
+bin/
+obj/
+.vs/
+dev/out/
+dev/editor-rig/scratch/
+dev/editor-rig/*_result.json
+*.user
+.sbox/
