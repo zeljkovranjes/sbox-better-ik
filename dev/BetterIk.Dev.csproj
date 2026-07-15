@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <Compile Include="..\Code\BetterIk\Maths\**\*.cs" />
+    <Compile Include="..\Code\BetterIk\Skeleton\**\*.cs" />
   </ItemGroup>
 
 </Project>
