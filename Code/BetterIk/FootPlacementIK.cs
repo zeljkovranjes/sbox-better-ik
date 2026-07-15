@@ -89,11 +89,11 @@ public sealed class FootPlacementIK : Component
 
 		HasValidChains = true;
 
-		// Weight <= 0 skips the entire read-trace-solve-write cycle - see DECISIONS.md's
-		// no-unforced-writes principle: any SetBoneTransform whose value has no restoring force
-		// (not animated, not converging toward a fixed target) is not bit-lossless at the engine
-		// write boundary and compounds to Infinity over enough frames (confirmed via FabrikIK).
-		// Zero the smoothed state so re-enabling Weight later doesn't replay stale offsets.
+		// Weight <= 0 skips the entire read-trace-solve-write cycle: a SetBoneTransform whose
+		// value has no restoring force (not animated, not converging toward a fixed target) is
+		// not bit-lossless at the engine write boundary and compounds to Infinity over enough
+		// frames (confirmed via FabrikIK). Zero the smoothed state so re-enabling Weight later
+		// doesn't replay stale offsets.
 		if ( Weight <= 0f )
 		{
 			_smoothPelvis = 0f;

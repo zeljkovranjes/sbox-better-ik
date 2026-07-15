@@ -12,21 +12,6 @@ namespace BetterIk;
 /// descendant of it - the component finds the SkinnedModelRenderer via GetComponentInParent),
 /// set EndBone to the hand/foot bone name, optionally drag in a Target and PoleTarget. Walks
 /// up the skeleton automatically to find the mid and root bones; no per-model setup needed.
-///
-/// EMPIRICAL VERIFICATION CHECKLIST (see DECISIONS.md for full detail on each item):
-/// 1. NON-BLOCKING, exact frame ordering not directly measured, but the component is confirmed
-///    to produce correct, stable, converged position and rotation results every frame on a real
-///    Citizen rig (see item 5), so OnPreRender() works well enough in practice as written.
-/// 2. CONFIRMED via engine XML docs: TryGetBoneTransformAnimation returns "the worldspace bone
-///    transform after animation but before physics and procedural bones" - safe for multi-limb.
-/// 3. NON-BLOCKING, still technically [Obsolete] with no documented replacement; kept defensively
-///    (see the pragma below). Live testing shows it causes no observable problem as currently used.
-/// 4. NON-BLOCKING - not directly tested, but auto-walk resolves correctly on Citizen's real
-///    hierarchy in practice (see item 5).
-/// 5. CONFIRMED live on a real Citizen model: two TwoBoneIK components (right arm EndBone=hand_R,
-///    left arm EndBone=hand_L) with independent targets, entered play simultaneously - both hands
-///    moved correctly toward their own targets with zero compile/runtime errors. hand_R's solved
-///    distance from root matched the analytic far-reach clamp (Lmax) to close numerical precision.
 /// </summary>
 public sealed class TwoBoneIK : Component
 {
@@ -90,11 +75,11 @@ public sealed class TwoBoneIK : Component
 		}
 
 		// Weight <= 0 skips the read-solve-write cycle entirely rather than reading the animated
-		// pose and writing an "unchanged" result back. Confirmed live on FabrikIK (see
-		// DECISIONS.md) that the latter is NOT perfectly lossless through the world<->model-local
-		// round trip every frame - on a rig with no real animation driving it, this compounded
-		// into Infinity within a few seconds even though the math is a no-op at Weight=0. Not
-		// writing at all when there is nothing to blend removes the feedback path entirely.
+		// pose and writing an "unchanged" result back. The world<->model-local round trip through
+		// SetBoneTransform is NOT perfectly lossless every frame - on a rig with no real animation
+		// driving it, this compounded into Infinity within a few seconds even though the math is
+		// a no-op at Weight=0. Not writing at all when there is nothing to blend removes the
+		// feedback path entirely.
 		if ( Weight <= 0f )
 		{
 			LastSolveApplied = false;

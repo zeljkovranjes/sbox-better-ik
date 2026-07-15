@@ -148,10 +148,10 @@ public static class BikGate
 		}
 
 		// A camera was added here as a hypothesis fix for component update methods never firing
-		// during this gate's play session (see DECISIONS.md) - it did NOT resolve the issue
-		// (confirmed with instrumented counters: OnPreRender/OnUpdate both stayed at 0 calls
-		// either way), so the root cause is still open. Left in since a scene with an active
-		// camera is closer to a normal game session regardless, and it is not the cause of harm.
+		// during this gate's play session - it did NOT resolve the issue (confirmed with
+		// instrumented counters: OnPreRender/OnUpdate both stayed at 0 calls either way), so the
+		// root cause is still open. Left in since a scene with an active camera is closer to a
+		// normal game session regardless, and it is not the cause of harm.
 		var cameraGo = scene.CreateObject( true );
 		cameraGo.Name = "Gate Camera";
 		cameraGo.WorldPosition = new Vector3( 0, -800, 200 );

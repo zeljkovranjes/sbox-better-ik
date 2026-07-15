@@ -89,9 +89,9 @@ public static class TwoBoneIkSolver
         // Near-side clamp: when bone lengths differ, the chain also cannot reach closer than
         // |l1s - l2s| (folding the longer bone back over the shorter one). Mirrors the far-side
         // max-reach clamp; without it cosAlpha blows outside [-1,1] and the elbow snaps to an
-        // inconsistent pose whose end position drifts off target. Not covered by the original
-        // edge-case table (only "beyond max reach" and "exactly at zero" were listed) - flagged to
-        // the Advisor as a spec gap found during fuzzing, see DECISIONS.md.
+        // inconsistent pose whose end position drifts off target. A near-side reach clamp found
+        // by fuzz testing, not covered by the original edge-case table (which only listed
+        // "beyond max reach" and "exactly at zero").
         float minReach = MathF.Abs(l1s - l2s);
         if (dFinal < minReach)
             dFinal = minReach;
