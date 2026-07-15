@@ -77,4 +77,24 @@ internal static class IkMath
         var delta = Matrix4x4.Transpose(mOld) * mNew;
         return Quaternion.Normalize(Quaternion.CreateFromRotationMatrix(delta));
     }
+
+    // Shortest-arc rotation mapping unit vector `from` onto unit vector `to`. No twist/roll control
+    // around the resulting axis (there is no well-defined "roll" for a pure vector-to-vector map).
+    internal static Quaternion FromToRotation(Vector3 from, Vector3 to)
+    {
+        float cosAngle = Math.Clamp(Vector3.Dot(from, to), -1f, 1f);
+
+        if (cosAngle > 1f - 1e-7f)
+            return Quaternion.Identity;
+
+        if (cosAngle < -1f + 1e-7f)
+        {
+            Vector3 axis180 = AnyPerpendicular(from);
+            return Quaternion.CreateFromAxisAngle(axis180, MathF.PI);
+        }
+
+        Vector3 axis = Vector3.Normalize(Vector3.Cross(from, to));
+        float angle = MathF.Acos(cosAngle);
+        return Quaternion.CreateFromAxisAngle(axis, angle);
+    }
 }
