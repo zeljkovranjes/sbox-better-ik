@@ -15,11 +15,11 @@ namespace BetterIk;
 /// ankle/foot bone names. Root and mid bones for each leg are auto-walked like TwoBoneIK; the
 /// pelvis is auto-derived as the nearest common ancestor of the two resolved leg roots.
 /// </summary>
-public sealed class FootPlacementIK : Component
+public sealed class FootPlacementIK : Component, IHasSkinnedRenderer
 {
 	[Property] public SkinnedModelRenderer? Renderer { get; set; }
-	[Property] public string LeftFootBone { get; set; } = "";
-	[Property] public string RightFootBone { get; set; } = "";
+	[Property, BoneName] public string LeftFootBone { get; set; } = "";
+	[Property, BoneName] public string RightFootBone { get; set; } = "";
 
 	[Property, Range( 0f, 1f )] public float Weight { get; set; } = 1f;
 	[Property, Range( 0f, 1f )] public float FootRotationWeight { get; set; } = 1f;
@@ -34,13 +34,46 @@ public sealed class FootPlacementIK : Component
 	[Property, Group( "Ground" )] public float SmoothingRate { get; set; } = 10f;
 	[Property, Group( "Ground" )] public string IgnoreTags { get; set; } = "player";
 
-	[Property, Group( "Advanced" )] public string PelvisBoneOverride { get; set; } = "";
+	// ---- Plant-to-ground mode (opt-in) -----------------------------------------------------
+	// The default (terrain) mode preserves the animation's authored height above an assumed
+	// flat ground and only adapts to terrain deviation, which is correct for grounded
+	// animations. Plant mode instead corrects animations whose feet HOVER above the ground
+	// they were authored to touch (a per-clip constant conversion offset, possibly different
+	// per foot): each foot's plant point (an optional plant bone, e.g. the ball of the foot;
+	// the foot bone itself when unset) is measured against the ground, its TRAILING-MINIMUM
+	// height over PlantWindowSeconds is treated as the hover to remove, and the foot is
+	// lowered vertically by that amount with its AUTHORED ROTATION UNTOUCHED. Removing only
+	// the trailing minimum keeps every within-window articulation intact: authored step
+	// lifts and heel raises ride on top of the corrected plant level, flat-authored feet
+	// come out flat, and nothing is ever rotated onto the surface. Pelvis is not moved in
+	// plant mode (correct a shared full-body offset at the model root instead).
+	[Property, Group( "Plant" )] public bool PlantToGround { get; set; } = false;
+	[Property, BoneName, Group( "Plant" )] public string LeftPlantBone { get; set; } = "";
+	[Property, BoneName, Group( "Plant" )] public string RightPlantBone { get; set; } = "";
+	/// <summary>Rest height of the plant point above the ground when planted (its bind height).</summary>
+	[Property, Group( "Plant" )] public float PlantHeightOffset { get; set; } = 0f;
+	/// <summary>Trailing window (seconds) whose minimum plant-point height is removed as hover.</summary>
+	[Property, Group( "Plant" )] public float PlantWindowSeconds { get; set; } = 0.8f;
+	/// <summary>Upper clamp on the per-foot plant correction.</summary>
+	[Property, Group( "Plant" )] public float PlantMaxCorrection { get; set; } = 6f;
+	/// <summary>Skip tracing and use a flat world-space ground plane at FlatGroundHeight.</summary>
+	[Property, Group( "Plant" )] public bool UseFlatGround { get; set; } = false;
+	[Property, Group( "Plant" )] public float FlatGroundHeight { get; set; } = 0f;
+
+	/// <summary>Live plant corrections (world units, positive = foot lowered), for diagnostics.</summary>
+	public float CurrentPlantCorrectionL { get; private set; }
+	public float CurrentPlantCorrectionR { get; private set; }
+	/// <summary>Live plant-point heights above the ground before correction, for diagnostics.</summary>
+	public float LastPlantResidualL { get; private set; }
+	public float LastPlantResidualR { get; private set; }
+
+	[Property, BoneName, Group( "Advanced" )] public string PelvisBoneOverride { get; set; } = "";
 	[Property, Group( "Advanced" )] public GameObject? LeftPoleTarget { get; set; }
 	[Property, Group( "Advanced" )] public GameObject? RightPoleTarget { get; set; }
-	[Property, Group( "Advanced" )] public string LeftRootOverride { get; set; } = "";
-	[Property, Group( "Advanced" )] public string LeftMidOverride { get; set; } = "";
-	[Property, Group( "Advanced" )] public string RightRootOverride { get; set; } = "";
-	[Property, Group( "Advanced" )] public string RightMidOverride { get; set; } = "";
+	[Property, BoneName, Group( "Advanced" )] public string LeftRootOverride { get; set; } = "";
+	[Property, BoneName, Group( "Advanced" )] public string LeftMidOverride { get; set; } = "";
+	[Property, BoneName, Group( "Advanced" )] public string RightRootOverride { get; set; } = "";
+	[Property, BoneName, Group( "Advanced" )] public string RightMidOverride { get; set; } = "";
 
 	public bool HasValidChains { get; private set; }
 	public bool PelvisResolved { get; private set; }
@@ -48,7 +81,7 @@ public sealed class FootPlacementIK : Component
 	public bool RightGrounded { get; private set; }
 	public float CurrentPelvisOffset { get; private set; }
 
-	private (SkinnedModelRenderer Renderer, string LeftFootBone, string RightFootBone, string LeftRootOverride, string LeftMidOverride, string RightRootOverride, string RightMidOverride, string PelvisBoneOverride) _cachedSignature;
+	private (SkinnedModelRenderer Renderer, string LeftFootBone, string RightFootBone, string LeftRootOverride, string LeftMidOverride, string RightRootOverride, string RightMidOverride, string PelvisBoneOverride, string LeftPlantBone, string RightPlantBone) _cachedSignature;
 
 	// Only valid once EnsureResolved() has returned true at least once.
 	private BoneCollection.Bone _leftRoot = null!;
@@ -59,12 +92,26 @@ public sealed class FootPlacementIK : Component
 	private BoneCollection.Bone _rightEnd = null!;
 	private BoneCollection.Bone _pelvisBone = null!;
 
+	// Plant points (plant mode): the ball / toe bone whose ground contact is planted. Falls
+	// back to the leg's own end bone when the name is unset or not present on the model.
+	private BoneCollection.Bone _leftPlant = null!;
+	private BoneCollection.Bone _rightPlant = null!;
+	private bool _leftPlantResolved;
+	private bool _rightPlantResolved;
+
 	private BindPoseData _leftBindPose;
 	private BindPoseData _rightBindPose;
 
 	private float _smoothPelvis;
 	private float _smoothDeltaL;
 	private float _smoothDeltaR;
+
+	// Plant mode state: trailing-minimum windows over each plant point's height above ground,
+	// and the smoothed per-foot downward correction actually applied.
+	private PlantWindow _plantWindowL;
+	private PlantWindow _plantWindowR;
+	private float _smoothPlantL;
+	private float _smoothPlantR;
 
 	protected override void OnStart()
 	{
@@ -99,9 +146,21 @@ public sealed class FootPlacementIK : Component
 			_smoothPelvis = 0f;
 			_smoothDeltaL = 0f;
 			_smoothDeltaR = 0f;
+			_smoothPlantL = 0f;
+			_smoothPlantR = 0f;
+			_plantWindowL?.Reset();
+			_plantWindowR?.Reset();
 			LeftGrounded = false;
 			RightGrounded = false;
 			CurrentPelvisOffset = 0f;
+			CurrentPlantCorrectionL = 0f;
+			CurrentPlantCorrectionR = 0f;
+			return;
+		}
+
+		if ( PlantToGround )
+		{
+			SolvePlant();
 			return;
 		}
 
@@ -205,6 +264,100 @@ public sealed class FootPlacementIK : Component
 #pragma warning restore CS0612
 	}
 
+	// Plant mode (opt-in via PlantToGround): correct each foot's hover WITHOUT moving the pelvis.
+	// Each foot's plant point (the ball bone, or the leg end when unset) is measured against the
+	// ground; its trailing-minimum height over PlantWindowSeconds is the planted level, and the
+	// foot is lowered by exactly that hover (down to PlantHeightOffset) with its authored rotation
+	// kept. Authored step lifts and heel raises above the planted level ride on top untouched;
+	// flat-authored feet come out flat; a grounded foot is never raised. The pelvis is left alone:
+	// a shared full-body offset belongs on the model root, not here.
+	private void SolvePlant()
+	{
+		_plantWindowL ??= new PlantWindow( PlantWindowSeconds );
+		_plantWindowR ??= new PlantWindow( PlantWindowSeconds );
+		_plantWindowL.WindowSeconds = PlantWindowSeconds;
+		_plantWindowR.WindowSeconds = PlantWindowSeconds;
+
+		Vector3 up = Vector3.Up;
+		Vector3 origin = Renderer.WorldPosition;
+		float now = Time.Now;
+		float dt = Time.Delta;
+
+		Renderer.TryGetBoneTransformAnimation( in _leftRoot, out var leftRootTx );
+		Renderer.TryGetBoneTransformAnimation( in _leftMid, out var leftMidTx );
+		Renderer.TryGetBoneTransformAnimation( in _leftEnd, out var leftEndTx );
+		Renderer.TryGetBoneTransformAnimation( in _rightRoot, out var rightRootTx );
+		Renderer.TryGetBoneTransformAnimation( in _rightMid, out var rightMidTx );
+		Renderer.TryGetBoneTransformAnimation( in _rightEnd, out var rightEndTx );
+
+		var leftPlantBone = _leftPlantResolved ? _leftPlant : _leftEnd;
+		var rightPlantBone = _rightPlantResolved ? _rightPlant : _rightEnd;
+		Renderer.TryGetBoneTransformAnimation( in leftPlantBone, out var leftPlantTx );
+		Renderer.TryGetBoneTransformAnimation( in rightPlantBone, out var rightPlantTx );
+
+		_smoothPlantL = SolvePlantCorrection( leftPlantTx.Position, up, origin, now, dt, _plantWindowL, _smoothPlantL,
+			out bool leftGrounded, out float leftResidual );
+		_smoothPlantR = SolvePlantCorrection( rightPlantTx.Position, up, origin, now, dt, _plantWindowR, _smoothPlantR,
+			out bool rightGrounded, out float rightResidual );
+
+		LeftGrounded = leftGrounded;
+		RightGrounded = rightGrounded;
+		LastPlantResidualL = leftResidual;
+		LastPlantResidualR = rightResidual;
+		CurrentPlantCorrectionL = _smoothPlantL;
+		CurrentPlantCorrectionR = _smoothPlantR;
+		CurrentPelvisOffset = 0f;
+
+		// A settled zero correction skips the leg write entirely (the target IS the animated pose,
+		// so the write is an unforced no-op - the same hazard the terrain path guards against).
+		if ( _smoothPlantL != 0f )
+			SolveLeg( in _leftRoot, in _leftMid, in _leftEnd, leftRootTx, leftMidTx, leftEndTx, _leftBindPose,
+				Vector3.Zero, -_smoothPlantL, leftEndTx.Rotation.ToNumerics(), LeftPoleTarget, up );
+		if ( _smoothPlantR != 0f )
+			SolveLeg( in _rightRoot, in _rightMid, in _rightEnd, rightRootTx, rightMidTx, rightEndTx, _rightBindPose,
+				Vector3.Zero, -_smoothPlantR, rightEndTx.Rotation.ToNumerics(), RightPoleTarget, up );
+
+#pragma warning disable CS0612
+		Renderer.PostAnimationUpdate();
+#pragma warning restore CS0612
+	}
+
+	// One foot's smoothed downward plant correction (world units, positive = foot lowered). Reads
+	// the plant point against the ground (a flat plane or a downward trace), pushes its height into
+	// the trailing-minimum window, removes the trailing-minimum hover down to PlantHeightOffset,
+	// and smooths the result. Returns 0 when no ground reference is available (nothing to plant to).
+	private float SolvePlantCorrection( Vector3 plantPos, Vector3 up, Vector3 origin, float now, float dt,
+		PlantWindow window, float smoothPrev, out bool grounded, out float residual )
+	{
+		float groundLevel;
+		if ( UseFlatGround )
+		{
+			grounded = true;
+			groundLevel = FlatGroundHeight;
+		}
+		else
+		{
+			var tr = TraceFoot( plantPos, up, origin );
+			grounded = tr.Hit;
+			groundLevel = tr.Hit ? Vector3.Dot( tr.HitPosition, up ) : 0f;
+		}
+
+		// Height of the plant point above the ground along the up axis (the hover to remove).
+		residual = Vector3.Dot( plantPos, up ) - groundLevel;
+
+		float target = 0f;
+		if ( grounded )
+		{
+			float trailingMin = window.Push( now, residual );
+			target = PlantToGroundSolver.ComputeCorrection( trailingMin, PlantHeightOffset, PlantMaxCorrection );
+		}
+
+		float smoothed = FootPlacementSolver.SmoothOffset( smoothPrev, target, SmoothingRate, dt );
+		if ( target == 0f && MathF.Abs( smoothed ) < 1e-3f )
+			smoothed = 0f;
+		return smoothed;
+	}
+
 	private void SolveLeg( in BoneCollection.Bone rootBone, in BoneCollection.Bone midBone, in BoneCollection.Bone endBone,
 		global::Transform rootTx, global::Transform midTx, global::Transform endTx, BindPoseData bindPose,
 		Vector3 pelvisShift, float footDelta, System.Numerics.Quaternion footTargetRotation, GameObject? poleTarget, Vector3 up )
@@ -270,7 +423,7 @@ public sealed class FootPlacementIK : Component
 		if ( Renderer is null || Renderer.Model is null || string.IsNullOrEmpty( LeftFootBone ) || string.IsNullOrEmpty( RightFootBone ) )
 			return false;
 
-		var signature = (Renderer, LeftFootBone, RightFootBone, LeftRootOverride, LeftMidOverride, RightRootOverride, RightMidOverride, PelvisBoneOverride);
+		var signature = (Renderer, LeftFootBone, RightFootBone, LeftRootOverride, LeftMidOverride, RightRootOverride, RightMidOverride, PelvisBoneOverride, LeftPlantBone, RightPlantBone);
 		if ( signature.Equals( _cachedSignature ) && _leftRoot is not null )
 			return true;
 
@@ -283,13 +436,38 @@ public sealed class FootPlacementIK : Component
 			return false;
 
 		ResolvePelvis( bones, leftRootNode, rightRootNode );
+		ResolvePlantBones( bones );
 
 		_cachedSignature = signature;
 		_smoothPelvis = 0f;
 		_smoothDeltaL = 0f;
 		_smoothDeltaR = 0f;
+		_smoothPlantL = 0f;
+		_smoothPlantR = 0f;
+		_plantWindowL?.Reset();
+		_plantWindowR?.Reset();
 
 		return true;
+	}
+
+	// Plant points (ball / toe bone) whose ground contact is planted. Optional: an unset or
+	// absent name falls back to the leg's own end bone at solve time (_*PlantResolved = false).
+	private void ResolvePlantBones( BoneCollection bones )
+	{
+		_leftPlantResolved = false;
+		_rightPlantResolved = false;
+
+		if ( !string.IsNullOrEmpty( LeftPlantBone ) && bones.HasBone( LeftPlantBone ) )
+		{
+			_leftPlant = bones.GetBone( LeftPlantBone );
+			_leftPlantResolved = true;
+		}
+
+		if ( !string.IsNullOrEmpty( RightPlantBone ) && bones.HasBone( RightPlantBone ) )
+		{
+			_rightPlant = bones.GetBone( RightPlantBone );
+			_rightPlantResolved = true;
+		}
 	}
 
 	private static bool TryResolveLeg( BoneCollection bones, string endBoneName, string rootOverrideName, string midOverrideName,
@@ -413,9 +591,6 @@ public sealed class FootPlacementIK : Component
 			Gizmo.Draw.Color = Color.Orange;
 			Gizmo.Draw.WorldText( "FootPlacementIK: no pelvis resolved, feet-only mode (see PelvisBoneOverride)", new global::Transform( WorldPosition + Vector3.Up * 8f ) );
 		}
-
-		Gizmo.Draw.Color = Color.White;
-		Gizmo.Draw.WorldText( $"W:{Weight:F2} Pelvis:{CurrentPelvisOffset:F1} L:{(LeftGrounded ? "G" : "-")} R:{(RightGrounded ? "G" : "-")}", new global::Transform( WorldPosition + Vector3.Up * 4f ) );
 	}
 
 	private void DrawFootGizmo( Vector3 footPos, Vector3 up, Vector3 origin, float smoothDelta )

@@ -13,11 +13,11 @@ namespace BetterIk;
 /// set EndBone to the hand/foot bone name, optionally drag in a Target and PoleTarget. Walks
 /// up the skeleton automatically to find the mid and root bones; no per-model setup needed.
 /// </summary>
-public sealed class TwoBoneIK : Component
+public sealed class TwoBoneIK : Component, IHasSkinnedRenderer
 {
 	// --- Setup (the happy path: add component, set EndBone, drag Target, done) ---
 	[Property] public SkinnedModelRenderer? Renderer { get; set; }
-	[Property] public string EndBone { get; set; } = "";
+	[Property, BoneName] public string EndBone { get; set; } = "";
 	[Property] public GameObject? Target { get; set; }
 	[Property] public GameObject? PoleTarget { get; set; }
 
@@ -27,8 +27,8 @@ public sealed class TwoBoneIK : Component
 	[Property, Range( 0f, 1f )] public float RotationWeight { get; set; } = 1f;
 
 	// --- Advanced: manual bone overrides, pole fine-tuning, soft/stretch (off by default) ---
-	[Property, Group( "Advanced" )] public string RootBoneOverride { get; set; } = "";
-	[Property, Group( "Advanced" )] public string MidBoneOverride { get; set; } = "";
+	[Property, BoneName, Group( "Advanced" )] public string RootBoneOverride { get; set; } = "";
+	[Property, BoneName, Group( "Advanced" )] public string MidBoneOverride { get; set; } = "";
 	[Property, Group( "Advanced" ), Range( -180f, 180f )] public float PoleAngleOffsetDegrees { get; set; } = 0f;
 	[Property, Group( "Advanced" ), Range( 0f, 0.49f )] public float SoftFraction { get; set; } = 0f;
 	[Property, Group( "Advanced" ), Range( 0f, 1f )] public float MaxStretch { get; set; } = 0f;
@@ -238,8 +238,5 @@ public sealed class TwoBoneIK : Component
 
 		Gizmo.Draw.Color = Color.Cyan.WithAlpha( 0.15f );
 		Gizmo.Draw.SolidTriangle( new Triangle { A = solvedRoot.Position, B = solvedMid.Position, C = solvedEnd.Position } );
-
-		Gizmo.Draw.Color = Color.White;
-		Gizmo.Draw.WorldText( $"W:{Weight:F2} Pos:{PositionWeight:F2} Rot:{RotationWeight:F2}", new global::Transform( solvedMid.Position + Vector3.Up * (lmax * 0.1f) ) );
 	}
 }

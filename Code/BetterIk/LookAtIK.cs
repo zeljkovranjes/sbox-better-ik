@@ -11,10 +11,10 @@ namespace BetterIk;
 /// bone's currently animated aim direction. Drop on the model root (or any descendant of it), set
 /// BoneName to the head/eye bone name, drag in a Target. No chain resolution needed (single bone).
 /// </summary>
-public sealed class LookAtIK : Component
+public sealed class LookAtIK : Component, IHasSkinnedRenderer
 {
 	[Property] public SkinnedModelRenderer? Renderer { get; set; }
-	[Property] public string BoneName { get; set; } = "";
+	[Property, BoneName] public string BoneName { get; set; } = "";
 	[Property] public GameObject? Target { get; set; }
 
 	[Property, Range( 0f, 1f )] public float Weight { get; set; } = 1f;
@@ -157,8 +157,5 @@ public sealed class LookAtIK : Component
 			Gizmo.Draw.Color = Color.Orange;
 			Gizmo.Draw.WorldText( "LookAtIK: no bind-pose child, using fallback axis (see LocalAimAxisOverride)", new global::Transform( boneTx.Position + Vector3.Up * (scale * 5f) ) );
 		}
-
-		Gizmo.Draw.Color = Color.White;
-		Gizmo.Draw.WorldText( $"W:{Weight:F2} Max:{MaxAngleDegrees:F0}", new global::Transform( boneTx.Position + Vector3.Up * (scale * 4f) ) );
 	}
 }

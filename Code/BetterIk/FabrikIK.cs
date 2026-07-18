@@ -15,11 +15,11 @@ namespace BetterIk;
 /// TwoBoneIK this cannot auto-walk a fixed depth, since a FABRIK chain's length is arbitrary, so
 /// RootBone must be named explicitly.
 /// </summary>
-public sealed class FabrikIK : Component
+public sealed class FabrikIK : Component, IHasSkinnedRenderer
 {
 	[Property] public SkinnedModelRenderer? Renderer { get; set; }
-	[Property] public string RootBone { get; set; } = "";
-	[Property] public string EndBone { get; set; } = "";
+	[Property, BoneName] public string RootBone { get; set; } = "";
+	[Property, BoneName] public string EndBone { get; set; } = "";
 	[Property] public GameObject? Target { get; set; }
 
 	[Property, Range( 0f, 1f )] public float Weight { get; set; } = 1f;
