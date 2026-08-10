@@ -118,8 +118,15 @@ public static class TwoBoneIkSolver
 
         float sBlended = 1f + (sFull - 1f) * wPos;
 
-        Vector3 midBlended = a + sBlended * Vector3.Transform(b - a, deltaRoot);
-        Vector3 endBlended = midBlended + sBlended * Vector3.Transform(c - b, deltaMid);
+        // At full positional weight the solved points are the authoritative result. Rebuilding
+        // them through two float quaternion rotations introduces enough rounding to flatten the
+        // far end of the soft-reach curve even while the requested reach is still increasing.
+        Vector3 midBlended = wPos >= 1f
+            ? midSolved
+            : a + sBlended * Vector3.Transform(b - a, deltaRoot);
+        Vector3 endBlended = wPos >= 1f
+            ? endSolved
+            : midBlended + sBlended * Vector3.Transform(c - b, deltaMid);
 
         return new TwoBoneIkResult
         {
@@ -157,7 +164,11 @@ public static class TwoBoneIkSolver
         {
             float dSoft = (1f - softFraction) * lmax;
             float r = softFraction * lmax;
-            dEff = d <= dSoft ? d : dSoft + r * (1f - MathF.Exp(-(d - dSoft) / r));
+            // Evaluate the subtractive exponential in double precision. In float,
+            // 1 - exp(-x) loses the remaining tail early and creates a visible reach plateau.
+            dEff = d <= dSoft
+                ? d
+                : (float)(dSoft + r * (1d - Math.Exp(-(double)(d - dSoft) / r)));
         }
 
         float sFull = dEff > 0f ? Math.Clamp(d / dEff, 1f, 1f + maxStretch) : 1f;

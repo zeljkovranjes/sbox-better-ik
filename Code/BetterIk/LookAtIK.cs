@@ -22,6 +22,12 @@ public sealed class LookAtIK : Component, IHasSkinnedRenderer
 
 	// Zero = auto-derive from bind pose (bone-to-first-child offset). Non-zero overrides that.
 	[Property, Group( "Advanced" )] public Vector3 LocalAimAxisOverride { get; set; } = Vector3.Zero;
+	/// <summary>Read the final post-override pose (TryGetBoneTransform) instead of the raw
+	/// animation pose. Enable ONLY when a full-pose driver (e.g. motion matching) clears and
+	/// rewrites every bone every frame - on such characters the animation pose is stale bind-pose
+	/// data. Leave OFF for animgraph-driven characters: with nothing rewriting bones each frame,
+	/// this component would read back its own previous write and compound toward infinity.</summary>
+	[Property, Group( "Advanced" )] public bool UseFinalPose { get; set; } = false;
 
 	public bool HasValidBone { get; private set; }
 
@@ -41,6 +47,11 @@ public sealed class LookAtIK : Component, IHasSkinnedRenderer
 	{
 		Solve();
 	}
+
+	// Overrides persist on the renderer until explicitly cleared, so disabling mid-play would
+	// otherwise freeze the skeleton at its last IK'd pose forever on any character where nothing
+	// else rewrites bones every frame.
+	protected override void OnDisabled() => Renderer?.ClearPhysicsBones();
 
 	private void Solve()
 	{
@@ -62,7 +73,7 @@ public sealed class LookAtIK : Component, IHasSkinnedRenderer
 		if ( Weight <= 0f )
 			return;
 
-		Renderer.TryGetBoneTransformAnimation( in _bone, out var boneTx );
+		Renderer.TryGetBonePose( in _bone, UseFinalPose, out var boneTx );
 
 		Vector3 localAim = LocalAimAxisOverride != Vector3.Zero
 			? LocalAimAxisOverride.Normal
@@ -128,7 +139,7 @@ public sealed class LookAtIK : Component, IHasSkinnedRenderer
 			return;
 		}
 
-		Renderer.TryGetBoneTransformAnimation( in _bone, out var boneTx );
+		Renderer.TryGetBonePose( in _bone, UseFinalPose, out var boneTx );
 
 		Vector3 localAim = LocalAimAxisOverride != Vector3.Zero
 			? LocalAimAxisOverride.Normal

@@ -32,6 +32,12 @@ public sealed class TwoBoneIK : Component, IHasSkinnedRenderer
 	[Property, Group( "Advanced" ), Range( -180f, 180f )] public float PoleAngleOffsetDegrees { get; set; } = 0f;
 	[Property, Group( "Advanced" ), Range( 0f, 0.49f )] public float SoftFraction { get; set; } = 0f;
 	[Property, Group( "Advanced" ), Range( 0f, 1f )] public float MaxStretch { get; set; } = 0f;
+	/// <summary>Read the final post-override pose (TryGetBoneTransform) instead of the raw
+	/// animation pose. Enable ONLY when a full-pose driver (e.g. motion matching) clears and
+	/// rewrites every bone every frame - on such characters the animation pose is stale bind-pose
+	/// data. Leave OFF for animgraph-driven characters: with nothing rewriting bones each frame,
+	/// this component would read back its own previous write and compound toward infinity.</summary>
+	[Property, Group( "Advanced" )] public bool UseFinalPose { get; set; } = false;
 
 	// --- Diagnostics ---
 	public bool HasValidChain { get; private set; }
@@ -56,6 +62,11 @@ public sealed class TwoBoneIK : Component, IHasSkinnedRenderer
 	{
 		Solve();
 	}
+
+	// Overrides persist on the renderer until explicitly cleared, so disabling mid-play would
+	// otherwise freeze the skeleton at its last IK'd pose forever on any character where nothing
+	// else rewrites bones every frame.
+	protected override void OnDisabled() => Renderer?.ClearPhysicsBones();
 
 	private void Solve()
 	{
@@ -86,9 +97,9 @@ public sealed class TwoBoneIK : Component, IHasSkinnedRenderer
 			return;
 		}
 
-		Renderer.TryGetBoneTransformAnimation( in _rootBone, out var rootTx );
-		Renderer.TryGetBoneTransformAnimation( in _midBone, out var midTx );
-		Renderer.TryGetBoneTransformAnimation( in _endBone, out var endTx );
+		Renderer.TryGetBonePose( in _rootBone, UseFinalPose, out var rootTx );
+		Renderer.TryGetBonePose( in _midBone, UseFinalPose, out var midTx );
+		Renderer.TryGetBonePose( in _endBone, UseFinalPose, out var endTx );
 
 		Vector3 poleHint = PoleTarget is not null && PoleTarget.IsValid
 			? PoleTarget.WorldPosition - rootTx.Position
@@ -202,9 +213,9 @@ public sealed class TwoBoneIK : Component, IHasSkinnedRenderer
 		if ( Target is null || !Target.IsValid )
 			return;
 
-		Renderer.TryGetBoneTransformAnimation( in _rootBone, out var rootTx );
-		Renderer.TryGetBoneTransformAnimation( in _midBone, out var midTx );
-		Renderer.TryGetBoneTransformAnimation( in _endBone, out var endTx );
+		Renderer.TryGetBonePose( in _rootBone, UseFinalPose, out var rootTx );
+		Renderer.TryGetBonePose( in _midBone, UseFinalPose, out var midTx );
+		Renderer.TryGetBonePose( in _endBone, UseFinalPose, out var endTx );
 
 		float l1 = (midTx.Position - rootTx.Position).Length;
 		float l2 = (endTx.Position - midTx.Position).Length;

@@ -74,6 +74,12 @@ public sealed class FootPlacementIK : Component, IHasSkinnedRenderer
 	[Property, BoneName, Group( "Advanced" )] public string LeftMidOverride { get; set; } = "";
 	[Property, BoneName, Group( "Advanced" )] public string RightRootOverride { get; set; } = "";
 	[Property, BoneName, Group( "Advanced" )] public string RightMidOverride { get; set; } = "";
+	/// <summary>Read the final post-override pose (TryGetBoneTransform) instead of the raw
+	/// animation pose. Enable ONLY when a full-pose driver (e.g. motion matching) clears and
+	/// rewrites every bone every frame - on such characters the animation pose is stale bind-pose
+	/// data. Leave OFF for animgraph-driven characters: with nothing rewriting bones each frame,
+	/// this component would read back its own previous write and compound toward infinity.</summary>
+	[Property, Group( "Advanced" )] public bool UseFinalPose { get; set; } = false;
 
 	public bool HasValidChains { get; private set; }
 	public bool PelvisResolved { get; private set; }
@@ -108,8 +114,8 @@ public sealed class FootPlacementIK : Component, IHasSkinnedRenderer
 
 	// Plant mode state: trailing-minimum windows over each plant point's height above ground,
 	// and the smoothed per-foot downward correction actually applied.
-	private PlantWindow _plantWindowL;
-	private PlantWindow _plantWindowR;
+	private PlantWindow? _plantWindowL;
+	private PlantWindow? _plantWindowR;
 	private float _smoothPlantL;
 	private float _smoothPlantR;
 
@@ -122,6 +128,27 @@ public sealed class FootPlacementIK : Component, IHasSkinnedRenderer
 	protected override void OnPreRender()
 	{
 		Solve();
+	}
+
+	// Overrides persist on the renderer until explicitly cleared, so disabling mid-play would
+	// otherwise freeze the skeleton at its last IK'd pose forever on any character where nothing
+	// else rewrites bones every frame. Resets the same smoothed state as the Weight<=0 skip path
+	// above, so re-enabling later doesn't replay stale offsets.
+	protected override void OnDisabled()
+	{
+		_smoothPelvis = 0f;
+		_smoothDeltaL = 0f;
+		_smoothDeltaR = 0f;
+		_smoothPlantL = 0f;
+		_smoothPlantR = 0f;
+		_plantWindowL?.Reset();
+		_plantWindowR?.Reset();
+		LeftGrounded = false;
+		RightGrounded = false;
+		CurrentPelvisOffset = 0f;
+		CurrentPlantCorrectionL = 0f;
+		CurrentPlantCorrectionR = 0f;
+		Renderer?.ClearPhysicsBones();
 	}
 
 	private void Solve()
@@ -164,16 +191,16 @@ public sealed class FootPlacementIK : Component, IHasSkinnedRenderer
 			return;
 		}
 
-		Renderer.TryGetBoneTransformAnimation( in _leftRoot, out var leftRootTx );
-		Renderer.TryGetBoneTransformAnimation( in _leftMid, out var leftMidTx );
-		Renderer.TryGetBoneTransformAnimation( in _leftEnd, out var leftEndTx );
-		Renderer.TryGetBoneTransformAnimation( in _rightRoot, out var rightRootTx );
-		Renderer.TryGetBoneTransformAnimation( in _rightMid, out var rightMidTx );
-		Renderer.TryGetBoneTransformAnimation( in _rightEnd, out var rightEndTx );
+		Renderer.TryGetBonePose( in _leftRoot, UseFinalPose, out var leftRootTx );
+		Renderer.TryGetBonePose( in _leftMid, UseFinalPose, out var leftMidTx );
+		Renderer.TryGetBonePose( in _leftEnd, UseFinalPose, out var leftEndTx );
+		Renderer.TryGetBonePose( in _rightRoot, UseFinalPose, out var rightRootTx );
+		Renderer.TryGetBonePose( in _rightMid, UseFinalPose, out var rightMidTx );
+		Renderer.TryGetBonePose( in _rightEnd, UseFinalPose, out var rightEndTx );
 
 		var pelvisTx = global::Transform.Zero;
 		if ( PelvisResolved )
-			Renderer.TryGetBoneTransformAnimation( in _pelvisBone, out pelvisTx );
+			Renderer.TryGetBonePose( in _pelvisBone, UseFinalPose, out pelvisTx );
 
 		Vector3 up = Vector3.Up;
 		Vector3 origin = Renderer.WorldPosition;
@@ -277,23 +304,24 @@ public sealed class FootPlacementIK : Component, IHasSkinnedRenderer
 		_plantWindowR ??= new PlantWindow( PlantWindowSeconds );
 		_plantWindowL.WindowSeconds = PlantWindowSeconds;
 		_plantWindowR.WindowSeconds = PlantWindowSeconds;
+		var renderer = Renderer!; // Solve() has already completed EnsureResolved().
 
 		Vector3 up = Vector3.Up;
-		Vector3 origin = Renderer.WorldPosition;
+		Vector3 origin = renderer.WorldPosition;
 		float now = Time.Now;
 		float dt = Time.Delta;
 
-		Renderer.TryGetBoneTransformAnimation( in _leftRoot, out var leftRootTx );
-		Renderer.TryGetBoneTransformAnimation( in _leftMid, out var leftMidTx );
-		Renderer.TryGetBoneTransformAnimation( in _leftEnd, out var leftEndTx );
-		Renderer.TryGetBoneTransformAnimation( in _rightRoot, out var rightRootTx );
-		Renderer.TryGetBoneTransformAnimation( in _rightMid, out var rightMidTx );
-		Renderer.TryGetBoneTransformAnimation( in _rightEnd, out var rightEndTx );
+		renderer.TryGetBonePose( in _leftRoot, UseFinalPose, out var leftRootTx );
+		renderer.TryGetBonePose( in _leftMid, UseFinalPose, out var leftMidTx );
+		renderer.TryGetBonePose( in _leftEnd, UseFinalPose, out var leftEndTx );
+		renderer.TryGetBonePose( in _rightRoot, UseFinalPose, out var rightRootTx );
+		renderer.TryGetBonePose( in _rightMid, UseFinalPose, out var rightMidTx );
+		renderer.TryGetBonePose( in _rightEnd, UseFinalPose, out var rightEndTx );
 
 		var leftPlantBone = _leftPlantResolved ? _leftPlant : _leftEnd;
 		var rightPlantBone = _rightPlantResolved ? _rightPlant : _rightEnd;
-		Renderer.TryGetBoneTransformAnimation( in leftPlantBone, out var leftPlantTx );
-		Renderer.TryGetBoneTransformAnimation( in rightPlantBone, out var rightPlantTx );
+		renderer.TryGetBonePose( in leftPlantBone, UseFinalPose, out var leftPlantTx );
+		renderer.TryGetBonePose( in rightPlantBone, UseFinalPose, out var rightPlantTx );
 
 		_smoothPlantL = SolvePlantCorrection( leftPlantTx.Position, up, origin, now, dt, _plantWindowL, _smoothPlantL,
 			out bool leftGrounded, out float leftResidual );
@@ -318,7 +346,7 @@ public sealed class FootPlacementIK : Component, IHasSkinnedRenderer
 				Vector3.Zero, -_smoothPlantR, rightEndTx.Rotation.ToNumerics(), RightPoleTarget, up );
 
 #pragma warning disable CS0612
-		Renderer.PostAnimationUpdate();
+		renderer.PostAnimationUpdate();
 #pragma warning restore CS0612
 	}
 
@@ -568,8 +596,8 @@ public sealed class FootPlacementIK : Component, IHasSkinnedRenderer
 			return;
 		}
 
-		Renderer.TryGetBoneTransformAnimation( in _leftEnd, out var leftEndTx );
-		Renderer.TryGetBoneTransformAnimation( in _rightEnd, out var rightEndTx );
+		Renderer.TryGetBonePose( in _leftEnd, UseFinalPose, out var leftEndTx );
+		Renderer.TryGetBonePose( in _rightEnd, UseFinalPose, out var rightEndTx );
 
 		Vector3 up = Vector3.Up;
 		Vector3 origin = Renderer.WorldPosition;
@@ -579,7 +607,7 @@ public sealed class FootPlacementIK : Component, IHasSkinnedRenderer
 
 		if ( PelvisResolved )
 		{
-			Renderer.TryGetBoneTransformAnimation( in _pelvisBone, out var pelvisTx );
+			Renderer.TryGetBonePose( in _pelvisBone, UseFinalPose, out var pelvisTx );
 			if ( MathF.Abs( _smoothPelvis ) > 0.01f )
 			{
 				Gizmo.Draw.Color = Color.Magenta;

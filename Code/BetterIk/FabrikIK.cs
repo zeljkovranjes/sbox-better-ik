@@ -28,6 +28,12 @@ public sealed class FabrikIK : Component, IHasSkinnedRenderer
 
 	// 0 = auto: 0.001 * total chain length, computed at solve time from the animated pose.
 	[Property, Group( "Advanced" )] public float Tolerance { get; set; } = 0f;
+	/// <summary>Read the final post-override pose (TryGetBoneTransform) instead of the raw
+	/// animation pose. Enable ONLY when a full-pose driver (e.g. motion matching) clears and
+	/// rewrites every bone every frame - on such characters the animation pose is stale bind-pose
+	/// data. Leave OFF for animgraph-driven characters: with nothing rewriting bones each frame,
+	/// this component would read back its own previous write and compound toward infinity.</summary>
+	[Property, Group( "Advanced" )] public bool UseFinalPose { get; set; } = false;
 
 	public bool HasValidChain { get; private set; }
 	public bool LastSolveApplied { get; private set; }
@@ -47,6 +53,11 @@ public sealed class FabrikIK : Component, IHasSkinnedRenderer
 	{
 		Solve();
 	}
+
+	// Overrides persist on the renderer until explicitly cleared, so disabling mid-play would
+	// otherwise freeze the skeleton at its last IK'd pose forever on any character where nothing
+	// else rewrites bones every frame.
+	protected override void OnDisabled() => Renderer?.ClearPhysicsBones();
 
 	private void Solve()
 	{
@@ -85,7 +96,7 @@ public sealed class FabrikIK : Component, IHasSkinnedRenderer
 		float totalLength = 0f;
 		for ( int i = 0; i < n; i++ )
 		{
-			Renderer.TryGetBoneTransformAnimation( in _chainBones[i], out var tx );
+			Renderer.TryGetBonePose( in _chainBones[i], UseFinalPose, out var tx );
 			positions[i] = tx.Position.ToNumerics();
 			rotations[i] = tx.Rotation.ToNumerics();
 			if ( i > 0 )

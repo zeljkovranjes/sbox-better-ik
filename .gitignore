@@ -6,3 +6,5 @@ dev/
 .sbox/
 DECISIONS.md
 launchSettings.json
+Code/chomnr_better_ik.csproj
+Editor/chomnr_better_ik.editor.csproj
