@@ -398,9 +398,12 @@ public sealed class FootPlacementIK : Component, IHasSkinnedRenderer
 		Vector3 shiftedMid = midTx.Position + pelvisShift;
 		Vector3 shiftedEnd = endTx.Position + pelvisShift;
 
-		Vector3 poleHint = poleTarget is not null && poleTarget.IsValid
-			? poleTarget.WorldPosition - shiftedRoot
-			: rootTx.Rotation * bindPose.DefaultPoleDirection.ToSandbox();
+		var hasExplicitPole = poleTarget is not null && poleTarget.IsValid;
+		// A full-pose driver such as MotionBricks already supplies a continuous, valid knee
+		// plane. Let the solver derive its elbow/knee direction from shiftedMid each frame;
+		// forcing the Citizen bind pole can flip a generated knee across the chain during a
+		// fast direction change. Explicit user pole targets still take precedence.
+		Vector3 poleHint = hasExplicitPole ? poleTarget!.WorldPosition - shiftedRoot : Vector3.Zero;
 
 		var input = new TwoBoneIkInput
 		{
@@ -412,7 +415,7 @@ public sealed class FootPlacementIK : Component, IHasSkinnedRenderer
 			EndRotation = endTx.Rotation.ToNumerics(),
 			TargetPosition = (endTx.Position + up * footDelta).ToNumerics(),
 			TargetRotation = footTargetRotation,
-			HasPole = true,
+			HasPole = hasExplicitPole,
 			PoleHint = poleHint.ToNumerics(),
 			PoleAngleOffsetRadians = 0f,
 			FallbackBendNormal = bindPose.BendNormal,
