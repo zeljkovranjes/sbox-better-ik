@@ -107,6 +107,8 @@ public sealed class FootPlacementIK : Component, IHasSkinnedRenderer
 
 	private BindPoseData _leftBindPose;
 	private BindPoseData _rightBindPose;
+	private readonly ChainFollowerPose _leftFollowers = new();
+	private readonly ChainFollowerPose _rightFollowers = new();
 
 	private float _smoothPelvis;
 	private float _smoothDeltaL;
@@ -390,6 +392,8 @@ public sealed class FootPlacementIK : Component, IHasSkinnedRenderer
 		global::Transform rootTx, global::Transform midTx, global::Transform endTx, BindPoseData bindPose,
 		Vector3 pelvisShift, float footDelta, System.Numerics.Quaternion footTargetRotation, GameObject? poleTarget, Vector3 up )
 	{
+		var followers = rootBone.Index == _leftRoot.Index ? _leftFollowers : _rightFollowers;
+		followers.Capture( Renderer!, UseFinalPose, rootTx, midTx, endTx );
 		Vector3 shiftedRoot = rootTx.Position + pelvisShift;
 		Vector3 shiftedMid = midTx.Position + pelvisShift;
 		Vector3 shiftedEnd = endTx.Position + pelvisShift;
@@ -423,9 +427,13 @@ public sealed class FootPlacementIK : Component, IHasSkinnedRenderer
 
 		// SetBoneTransform expects model-local space, unlike TryGetBoneTransformAnimation/
 		// TryGetBoneTransform which are documented as worldspace - see MathBridge.ToModelLocal.
-		Renderer!.SetBoneTransform( in rootBone, Renderer.ToModelLocal( new global::Transform( shiftedRoot, result.RootRotation.ToSandbox() ).WithScale( rootTx.Scale ) ) );
-		Renderer.SetBoneTransform( in midBone, Renderer.ToModelLocal( new global::Transform( result.MidPosition.ToSandbox(), result.MidRotation.ToSandbox() ).WithScale( midTx.Scale ) ) );
-		Renderer.SetBoneTransform( in endBone, Renderer.ToModelLocal( new global::Transform( result.EndPosition.ToSandbox(), result.EndRotation.ToSandbox() ).WithScale( endTx.Scale ) ) );
+		var solvedRoot = new global::Transform( shiftedRoot, result.RootRotation.ToSandbox() ).WithScale( rootTx.Scale );
+		var solvedMid = new global::Transform( result.MidPosition.ToSandbox(), result.MidRotation.ToSandbox() ).WithScale( midTx.Scale );
+		var solvedEnd = new global::Transform( result.EndPosition.ToSandbox(), result.EndRotation.ToSandbox() ).WithScale( endTx.Scale );
+		Renderer!.SetBoneTransform( in rootBone, Renderer.ToModelLocal( solvedRoot ) );
+		Renderer.SetBoneTransform( in midBone, Renderer.ToModelLocal( solvedMid ) );
+		Renderer.SetBoneTransform( in endBone, Renderer.ToModelLocal( solvedEnd ) );
+		followers.Write( Renderer, solvedRoot, solvedMid, solvedEnd );
 	}
 
 	private (bool Hit, Vector3 HitPosition, Vector3 Normal) TraceFoot( Vector3 footPos, Vector3 up, Vector3 origin )
@@ -465,6 +473,8 @@ public sealed class FootPlacementIK : Component, IHasSkinnedRenderer
 
 		ResolvePelvis( bones, leftRootNode, rightRootNode );
 		ResolvePlantBones( bones );
+		_leftFollowers.Resolve( bones, _leftRoot, _leftMid, _leftEnd );
+		_rightFollowers.Resolve( bones, _rightRoot, _rightMid, _rightEnd );
 
 		_cachedSignature = signature;
 		_smoothPelvis = 0f;

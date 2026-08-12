@@ -49,6 +49,7 @@ public sealed class TwoBoneIK : Component, IHasSkinnedRenderer
 	private BoneCollection.Bone _rootBone = null!;
 	private BoneCollection.Bone _midBone = null!;
 	private BoneCollection.Bone _endBone = null!;
+	private readonly ChainFollowerPose _followers = new();
 	private BindPoseData _bindPose;
 	private Vector3 _lastPoleDirection = Vector3.Up;
 
@@ -100,6 +101,7 @@ public sealed class TwoBoneIK : Component, IHasSkinnedRenderer
 		Renderer.TryGetBonePose( in _rootBone, UseFinalPose, out var rootTx );
 		Renderer.TryGetBonePose( in _midBone, UseFinalPose, out var midTx );
 		Renderer.TryGetBonePose( in _endBone, UseFinalPose, out var endTx );
+		_followers.Capture( Renderer, UseFinalPose, rootTx, midTx, endTx );
 
 		Vector3 poleHint = PoleTarget is not null && PoleTarget.IsValid
 			? PoleTarget.WorldPosition - rootTx.Position
@@ -132,9 +134,13 @@ public sealed class TwoBoneIK : Component, IHasSkinnedRenderer
 
 		// SetBoneTransform expects model-local space, unlike TryGetBoneTransformAnimation/
 		// TryGetBoneTransform which are documented as worldspace - see MathBridge.ToModelLocal.
-		Renderer.SetBoneTransform( in _rootBone, Renderer.ToModelLocal( new global::Transform( rootTx.Position, result.RootRotation.ToSandbox() ).WithScale( rootTx.Scale ) ) );
-		Renderer.SetBoneTransform( in _midBone, Renderer.ToModelLocal( new global::Transform( result.MidPosition.ToSandbox(), result.MidRotation.ToSandbox() ).WithScale( midTx.Scale ) ) );
-		Renderer.SetBoneTransform( in _endBone, Renderer.ToModelLocal( new global::Transform( result.EndPosition.ToSandbox(), result.EndRotation.ToSandbox() ).WithScale( endTx.Scale ) ) );
+		var solvedRoot = new global::Transform( rootTx.Position, result.RootRotation.ToSandbox() ).WithScale( rootTx.Scale );
+		var solvedMid = new global::Transform( result.MidPosition.ToSandbox(), result.MidRotation.ToSandbox() ).WithScale( midTx.Scale );
+		var solvedEnd = new global::Transform( result.EndPosition.ToSandbox(), result.EndRotation.ToSandbox() ).WithScale( endTx.Scale );
+		Renderer.SetBoneTransform( in _rootBone, Renderer.ToModelLocal( solvedRoot ) );
+		Renderer.SetBoneTransform( in _midBone, Renderer.ToModelLocal( solvedMid ) );
+		Renderer.SetBoneTransform( in _endBone, Renderer.ToModelLocal( solvedEnd ) );
+		_followers.Write( Renderer, solvedRoot, solvedMid, solvedEnd );
 
 		// PostAnimationUpdate is [Obsolete] with no replacement documented in the shipped XML
 		// docs; kept defensively until checklist item 3 is verified against a live editor.
@@ -184,6 +190,7 @@ public sealed class TwoBoneIK : Component, IHasSkinnedRenderer
 		_rootBone = ((SandboxBoneNode)chain.Root!).Bone;
 		_midBone = ((SandboxBoneNode)chain.Mid!).Bone;
 		_endBone = ((SandboxBoneNode)chain.End!).Bone;
+		_followers.Resolve( bones, _rootBone, _midBone, _endBone );
 		_cachedSignature = signature;
 
 		// Bind-pose world positions, composed from an arbitrary origin at the root - only the
